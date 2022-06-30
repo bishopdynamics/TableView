@@ -496,10 +496,10 @@ class TkTableView(tkinter.ttk.Treeview, TkWidget):
                 data_list_ints.append((newvalue, index))
             all_ints = True
         except Exception as ex:
-            print('failed to cast to int: %s' % ex)
+            # print('failed to cast to int: %s' % ex)
             all_ints = False
         if all_ints:
-            print('looks like these are all ints')
+            # print('looks like these are all ints')
             data_list = data_list_ints
         else:
             # try to cast all values to float, if that works then all values are float
@@ -510,10 +510,10 @@ class TkTableView(tkinter.ttk.Treeview, TkWidget):
                     data_list_floats.append((newvalue, index))
                 all_floats = True
             except Exception as ex:
-                print('failed to cast to float: %s' % ex)
+                # print('failed to cast to float: %s' % ex)
                 all_floats = False
             if all_floats:
-                print('looks like these are all floats')
+                # print('looks like these are all floats')
                 data_list = data_list_floats
             else:
                 # try to parse all values as date, if that works then all values are date
@@ -524,13 +524,13 @@ class TkTableView(tkinter.ttk.Treeview, TkWidget):
                         data_list_dates.append((newvalue, index))
                     all_dates = True
                 except Exception as ex:
-                    print('failed to cast to date: %s' % ex)
+                    # print('failed to cast to date: %s' % ex)
                     all_dates = False
                 if all_dates:
-                    print('looks like these are all dates')
+                    # print('looks like these are all dates')
                     data_list = data_list_dates
-                else:
-                    print('looks like these are all strings')
+                # else:
+                #     print('looks like these are all strings')
         data_list.sort(reverse=reverse)
         # rearrange items in sorted positions
         for index, (_val, k) in enumerate(data_list):
