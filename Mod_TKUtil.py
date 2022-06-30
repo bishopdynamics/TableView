@@ -14,7 +14,6 @@
 
 import uuid
 import random
-import json
 import tkinter
 import tkinter.ttk
 import tkinter.filedialog
@@ -23,13 +22,16 @@ import webbrowser
 
 from typing import Literal
 
+from dateutil.parser import parse as dateparse
+
 # NOTE padding for x and y are linked, but for now everything is default
 
+DEFAULT_FONT_NAME = 'Andale Mono'  # chosen because monospace
 DEFAULT_PADDING = 5  # pixels, if you dont provide padding=, then this is the default
-DEFAULT_FONT_SMALL = ('Arial', 10)
-DEFAULT_FONT = ('Arial', 12)  # used for almost everything by default
-DEFAULT_FONT_MEDIUM = ('Arial', 16)
-DEFAULT_FONT_LARGE = ('Arial', 24)
+DEFAULT_FONT_SMALL = (DEFAULT_FONT_NAME, 10)
+DEFAULT_FONT = (DEFAULT_FONT_NAME, 12)  # used for almost everything by default
+DEFAULT_FONT_MEDIUM = (DEFAULT_FONT_NAME, 16)
+DEFAULT_FONT_LARGE = (DEFAULT_FONT_NAME, 24)
 
 # TODO font licensing?
 
@@ -100,6 +102,10 @@ class TkWindow(tkinter.Tk):
                           (width, height, self.startpoint_x, self.startpoint_y))
             self.minsize(width=minwidth, height=minheight)
             self.maxsize(width=maxwidth, height=maxheight)
+            # style
+            self.mystyle = tkinter.ttk.Style()
+            self.mystyle.configure('Treeview', font=DEFAULT_FONT)
+            self.mystyle.configure('Treeview.Heading', font=DEFAULT_FONT)
             # window is a 1x1 grid
             self.rowconfigure(0, weight=1)
             self.columnconfigure(0, weight=1)
@@ -482,6 +488,49 @@ class TkTableView(tkinter.ttk.Treeview, TkWidget):
     def treeview_sort_column(self, col, reverse):
         self.clear_selection()
         data_list = [(self.set(k, col), k) for k in self.get_children('')]
+        # try to cast all values to int, if that works then all values are int
+        try:
+            data_list_ints = []
+            for (value, index) in data_list:
+                newvalue = int(value)
+                data_list_ints.append((newvalue, index))
+            all_ints = True
+        except Exception as ex:
+            print('failed to cast to int: %s' % ex)
+            all_ints = False
+        if all_ints:
+            print('looks like these are all ints')
+            data_list = data_list_ints
+        else:
+            # try to cast all values to float, if that works then all values are float
+            try:
+                data_list_floats = []
+                for (value, index) in data_list:
+                    newvalue = float(value)
+                    data_list_floats.append((newvalue, index))
+                all_floats = True
+            except Exception as ex:
+                print('failed to cast to float: %s' % ex)
+                all_floats = False
+            if all_floats:
+                print('looks like these are all floats')
+                data_list = data_list_floats
+            else:
+                # try to parse all values as date, if that works then all values are date
+                try:
+                    data_list_dates = []
+                    for (value, index) in data_list:
+                        newvalue = dateparse(value)
+                        data_list_dates.append((newvalue, index))
+                    all_dates = True
+                except Exception as ex:
+                    print('failed to cast to date: %s' % ex)
+                    all_dates = False
+                if all_dates:
+                    print('looks like these are all dates')
+                    data_list = data_list_dates
+                else:
+                    print('looks like these are all strings')
         data_list.sort(reverse=reverse)
         # rearrange items in sorted positions
         for index, (_val, k) in enumerate(data_list):
