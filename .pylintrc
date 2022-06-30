@@ -1,0 +1,17 @@
+[MAIN]
+
+disable=
+    line-too-long,
+    too-many-branches,
+    too-many-statements,
+    too-many-lines,
+    too-many-public-methods,
+    too-many-nested-blocks,
+    wildcard-import,
+    fixme,
+    broad-except,
+    missing-function-docstring,
+    invalid-name,
+    missing-module-docstring,
+    missing-class-docstring,
+    consider-using-f-string

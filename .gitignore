@@ -1,0 +1,8 @@
+.DS_Store
+.idea
+venv
+tmp
+build
+dist
+commit_id
+__pycache__
