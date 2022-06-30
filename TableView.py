@@ -35,11 +35,15 @@ if __name__ == '__main__':
         if not args['file']:
             b_has_stdin = select.select([sys.stdin, ], [], [], 0.0)[0]  # check if any data in stdin
             if b_has_stdin:
-                # we have data at stdin, lets try to load it
+                # we have data at stdin, lets see if it is empty
                 csv_reader = csv.reader(stdin)
                 input_data = []
                 for row in csv_reader:
-                    input_data.append(row)
+                    if row:
+                        input_data.append(row)
+                if not input_data:
+                    b_has_stdin = False
+            if b_has_stdin:
                 input_file_str = '(from stdin)'
                 print('TableView: loaded data from stdin')
             else:
@@ -59,6 +63,16 @@ if __name__ == '__main__':
                     # user must have hit Cancel, because no file was selected, lets check if we have late stdin
                     b_has_stdin = select.select([sys.stdin, ], [], [], 0.0)[0]  # check again if any data in stdin, late (while dialog was open)
                     if b_has_stdin:
+                        # we have data at stdin, lets see if it is empty
+                        # copyof_stdin = sys.stdin.copy()
+                        csv_reader = csv.reader(stdin)
+                        input_data = []
+                        for row in csv_reader:
+                            if row:
+                                input_data.append(row)
+                        if not input_data:
+                            b_has_stdin = False
+                    if b_has_stdin:
                         # we NOW have data at stdin, lets try to load it by re-execing ourself with it
                         print('TableView: re-execing with late stdin')
                         subprocess.Popen([sys.executable], stdin=sys.stdin)
@@ -68,7 +82,6 @@ if __name__ == '__main__':
                         # no file selected (must have hit Cancel), and nothing from stdin
                         print('TableView: no input file selected!')
                         sys.exit(0)  # we are done here
-
         else:
             input_file_str = args['file']
             # normalize to absolute path
