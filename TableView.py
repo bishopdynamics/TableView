@@ -39,13 +39,13 @@ class TableViewApp(tkinter.Frame):
         super().__init__(parent)
         self.table = Table(self, showtoolbar=True, showstatusbar=True)
         start_time = time.time()
-        file_size = get_file_size(filepath)
+        this_file_size = get_file_size(filepath)
         if DEBUG_MODE:
             print(f'Reading data from file: {filepath}')
         self.table.importCSV(filepath)
         self.table.show()
         end_time = time.time()
-        print(f'Loaded {file_size} in {end_time - start_time} seconds')
+        print(f'Loaded {this_file_size} in {end_time - start_time} seconds')
 
 def get_file_size(file_path, suffix="B"):
     """ Get the size of a given file, as a human-readable string
@@ -83,7 +83,6 @@ if __name__ == '__main__':
                     b_has_stdin = False
             if b_has_stdin:
                 input_file_str = '(from stdin)'
-                window_title = 'TableView - (data from stdin)'
                 if DEBUG_MODE:
                     print('TableView: loaded data from stdin')
             else:
@@ -135,6 +134,8 @@ if __name__ == '__main__':
                 writer = csv.writer(tcsv)
                 writer.writerows(input_data)
             w_end_time = time.time()
+            file_size = get_file_size(input_file_str)
+            window_title = f'TableView - {file_size} - (stdin)'
             if DEBUG_MODE:
                 print(f'Write .csv took {w_end_time - w_start_time} seconds')
         else:
@@ -142,9 +143,10 @@ if __name__ == '__main__':
             # normalize to absolute path
             input_file = pathlib.Path(input_file_arg).resolve()
             input_file_str = str(input_file)
-            window_title = f'TableView - {input_file_str}'
             if not input_file.is_file():
                 raise Exception('File not found!')
+            file_size = get_file_size(input_file_str)
+            window_title = f'TableView - {file_size} - {input_file_str}'
 
         # Finally - show a window with a Table populated from input_file_str
         window_root = tkinter.Tk()

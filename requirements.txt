@@ -1,3 +1,4 @@
 PyInstaller
 pandas
 pandastable
+openpyxl
