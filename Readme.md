@@ -52,10 +52,10 @@ tableview sampledata.csv
 tableview sampledata.tsv
 tableview sampledata.xls
 tableview sampledata.ods
-tableview sampledata.xlsx # will prompt to select sheet
+tableview sampledata.xlsx # will load all sheets
 tableview sampledata.xlsx sampledata # will load sheet named "sampledata"
 tableview sampledata.xlsx 0  # will load first sheet (zero-indexed)
-tableview sampledata.sqlite3  # will prompt to select table
+tableview sampledata.sqlite3  # load all tables
 tableview sampledata.sqlite3 artists  # will load the table named "artists"
 tableview sampledata.sqlite3 3  # will load the 4th table (zero-indexed)
 
