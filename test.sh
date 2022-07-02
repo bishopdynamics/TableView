@@ -5,7 +5,7 @@
 
 
 function bail() {
-	echo "An unexpected error occurred"
+	echo "script exited with error"
 	exit 1
 }
 
@@ -26,4 +26,4 @@ python TableView.py "$@" || {
   bail
 }
 
-echo "app exited cleanly"
+echo "script exited cleanly"

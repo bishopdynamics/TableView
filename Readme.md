@@ -2,7 +2,22 @@
 
 A simple utility for macOS to load csv data from stdin or a file and render a nice interactive tableview to explore it.
 
-I did not create much here, this is just `pandastable.Table` doing all the work.
+From stdin, it presumes csv data. 
+
+When a file is passed as an argument, several formats are supported, and the extension will be used guess the format.
+
+supported filetypes:
+* `.csv` comma-separated values
+* `.tsv` tab-separated values
+* `.xls` old MS Excel format
+* `.xlsx` modern MS Excel format
+* `.ods` OpenOffice / LibreOffice format
+* `.sqlite3`, `.sqlite`, `.db` sqlite3 database
+
+For Excel files will more than one sheet, you will be prompted to pick a sheet, or you can provide a sheet index or name as argument
+
+I did not create much here, `pandastable.Table` does most of the work.
+
 
 [MIT license](License.txt)
 
@@ -32,10 +47,19 @@ I like to throw a symlink my `~/bin/`
 ```bash
 ln -s /Applications/TableView.app/Contents/MacOS/TableView ~/bin/tableview
 
-# direct
+# when passing filename as argument, several file formats are supported
 tableview sampledata.csv
+tableview sampledata.tsv
+tableview sampledata.xls
+tableview sampledata.ods
+tableview sampledata.xlsx # will prompt to select sheet
+tableview sampledata.xlsx sampledata # will load sheet named "sampledata"
+tableview sampledata.xlsx 0  # will load first sheet (zero-indexed)
+tableview sampledata.sqlite3  # will prompt to select table
+tableview sampledata.sqlite3 artists  # will load the table named "artists"
+tableview sampledata.sqlite3 3  # will load the 4th table (zero-indexed)
 
-# stdin
+# stdin assumes csv data
 cat sampledata.csv |tableview
 
 # stdin alternate syntax
@@ -50,4 +74,4 @@ You can also use `./test.sh sampledata.csv`, which just runs the python script w
 
 ## Linux and other Unix-like systems
 
-I only tested this on macOS, but this is all really basic python3 with tkinter, built into a macOS app using pyinstaller. It should be trivial to tweak it to work on any other system, and might already work out of the box.
+I only tested this on macOS, but this is all really basic python3 with tkinter and pandas, built into a macOS app using pyinstaller. It should be trivial to tweak it to work on any other system, and might already work out of the box.

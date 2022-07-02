@@ -2,3 +2,5 @@ PyInstaller
 pandas
 pandastable
 openpyxl
+xlwt
+odfpy
