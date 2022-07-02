@@ -1,6 +1,5 @@
 #!/bin/bash
 # test as python script, without building the app
-#   NOTE: stdin stuff does not work correctly this way
 
 # Created 2022 by James Bishop (james@bishopdynamics.com)
 

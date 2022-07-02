@@ -42,24 +42,11 @@ cat sampledata.csv |tableview
 tableview < sampledata.csv
 ```
 
-## STDIN Race Condition
-What if I have a race condition with my stdin? 
-
-Let's say you run a script which takes a few seconds before it spits out csv to stdout, and you pipe that into `tableview`.
-
-```bash
-# this script takes a few seconds before it prints a csv string
-python3 get-lots-of-data.py |tableview
-```
-
-No problem! At first, the app will not find anything in stdin, so the filedialog will appear, 
-just wait a few seconds to let your script finish, then hit "Cancel" button.
-
-After you hit "Cancel" the app will check stdin again, and if it finds data it will re-exec itself with that data to stdin.
-
 ## Testing
 
 For testing, you can build & run it all at once with `./run.sh sampledata.csv`
+
+You can also use `./test.sh sampledata.csv`, which just runs the python script without building the app.
 
 ## Linux and other Unix-like systems
 
