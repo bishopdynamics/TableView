@@ -2,6 +2,8 @@
 
 A simple utility for macOS to load csv data from stdin or a file and render a nice interactive tableview to explore it.
 
+I did not create much here, this is just `pandastable.Table` doing all the work.
+
 [MIT license](License.txt)
 
 ![screenshot](screenshot.png)

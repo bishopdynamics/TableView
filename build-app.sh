@@ -11,10 +11,9 @@ function bail() {
 	exit 1
 }
 
-# create venv if missing
-if [ ! -d "$VENV_NAME" ]; then
-  ./setup-venv.sh || bail
-fi
+# create venv
+./setup-venv.sh || bail
+
 
 # we need modules in the venv
 source "${VENV_NAME}/bin/activate" || bail
@@ -32,6 +31,8 @@ pyinstaller ${APP_NAME}.spec || {
   deactivate
   bail
 }
+
+rm -r 'build' || bail  # clean up temp files
 
 # all done, deactivate the venv
 deactivate
