@@ -19,7 +19,7 @@ For Excel files will more than one sheet, you will be prompted to pick a sheet, 
 I did not create much here, `pandastable.Table` does most of the work.
 
 
-[MIT license](License.txt)
+[GPLv3 license](License.txt)
 
 ![screenshot](screenshot.png)
 

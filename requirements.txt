@@ -1,6 +1,7 @@
 PyInstaller
-pandas
-pandastable
-openpyxl
-xlwt
-odfpy
+pandas  # read many formats into dataframe
+pandastable  # fancy excel-like table UI for pandas dataframes
+openpyxl    # read excel formats
+xlwt    # write excel formats
+odfpy  # read openoffice formats
+statsmodels

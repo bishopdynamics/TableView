@@ -3,7 +3,8 @@
 # TableView
 
 # Created 2022 by James Bishop (james@bishopdynamics.com)
-#   NOTE this basically TableView, with a few minor tweaks
+#   pandas and pandastable do almost all the work here, including most of the UI
+#   pandastable can take any pandas dataframe, and pandas can load a wide variety of file formats into dataframe+
 
 import argparse
 import pathlib
@@ -22,13 +23,18 @@ from sys import stdin
 
 import pandas
 from pandastable import Table
+from pandastable import images as PDImages
+from pandastable.dialogs import addButton
 
 # print some extra information if True
 DEBUG_MODE = False
 WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 600
 
-APP_DESCRIPTION = 'TableView - A simple utility for macOS to load csv data from stdin or a file and render a nice interactive tableview to explore it'
+SHOW_STATUSBAR = True
+
+APP_NAME = 'TableView'
+APP_DESCRIPTION = f'{APP_NAME} - A simple utility for macOS to load csv data from stdin or a file and render a nice interactive tableview to explore it'
 
 
 class TableViewApp(tkinter.Frame):
@@ -38,19 +44,29 @@ class TableViewApp(tkinter.Frame):
     """
     def __init__(self, root, dataframes, dataframe_names):
         super().__init__(root)
-        self.scroll_threshold_h = 0.08  # handle scroll events only this often
-        self.scroll_threshold_v = 0.03  # handle scroll events only this often
+        # Added naive rate-limiting for scroll input is particularly necessary when using a trackpad,
+        #   which can send both horiz and vert scroll events much faster than a normal mouse scrollwheel
+        #   this deluge of events overwhelms the UI render loop, and makes it stutter/hang while trying to scroll
+        #   so here, after receiving one event we ignore events for a brief period
+        #   this has the downside of also making scrolling feel a little less responsive than should be possible, but because it prevents stutter and hang, it feels much more responsive real-world
+        #   and improvement might be to collect event.delta in an accumulator for each axis, and the next time we handle an event we can scroll the accumulated amount
+        self.scroll_threshold_h = 0.08  # handle horizontal scroll events only this often
+        self.scroll_threshold_v = 0.03  # handle vertical scroll events only this often
         self.scroll_lockout = 0.0  # how much longer to lockout other axis
         self.last_scrolled_h = time.time()
         self.last_scrolled_v = time.time()
-        self.tabcontrol = tkinter.ttk.Notebook(self)
+        self.tabs_notebook = tkinter.ttk.Notebook(self)
         for index, df in enumerate(dataframes):
-            tabframe = tkinter.ttk.Frame(self.tabcontrol)
-            thistable = Table(tabframe, showtoolbar=True, showstatusbar=True, dataframe=df)
-            self.tabcontrol.add(tabframe, text=dataframe_names[index])
+            tabframe = tkinter.ttk.Frame(self.tabs_notebook)
+            # dont use showtoolbar, we are adding our own
+            thistable = Table(tabframe, showstatusbar=SHOW_STATUSBAR, dataframe=df)
+            self.tabs_notebook.add(tabframe, text=dataframe_names[index])
             thistable.bind_all("<MouseWheel>", self.on_mousewheel)
+            # add our custom toolbar
+            thistable.toolbar = CustomToolBar(tabframe, thistable)
+            thistable.toolbar.grid(row=0,column=3,rowspan=2,sticky='news')
             thistable.show()
-        self.tabcontrol.pack(expand=1, fill='both')
+        self.tabs_notebook.pack(expand=1, fill='both')
 
     def on_mousewheel(self, event):
         # handle mousewheel events and scroll the table
@@ -81,6 +97,43 @@ class TableViewApp(tkinter.Frame):
         except Exception:
             pass  # ignore all errors
 
+
+class CustomToolBar(tkinter.Frame):
+    """Uses the parent instance to provide the functions"""
+    # NOTE this is copied from pandastable.Table, and modified
+    def __init__(self, parent=None, parentapp=None):
+        tkinter.Frame.__init__(self, parent, width=600, height=40)
+        self.parentframe = parent
+        self.parentapp = parentapp
+        img = PDImages.copy()
+        addButton(self, 'Copy', self.parentapp.copyTable, img, 'copy table to clipboard')
+        img = PDImages.paste()
+        addButton(self, 'Paste', self.parentapp.pasteTable, img, 'paste table')
+        img = PDImages.plot()
+        addButton(self, 'Plot', self.parentapp.plotSelected, img, 'plot selected')
+        img = PDImages.aggregate()
+        addButton(self, 'Aggregate', self.parentapp.aggregate, img, 'aggregate')
+        img = PDImages.pivot()
+        addButton(self, 'Pivot', self.parentapp.pivot, img, 'pivot')
+        img = PDImages.melt()
+        addButton(self, 'Melt', self.parentapp.melt, img, 'melt')
+        img = PDImages.merge()
+        addButton(self, 'Merge', self.parentapp.doCombine, img, 'merge, concat or join')
+        img = PDImages.table_multiple()
+        addButton(self, 'Table from selection', self.parentapp.tableFromSelection, img, 'sub-table from selection')
+        img = PDImages.filtering()
+        addButton(self, 'Query', self.parentapp.queryBar, img, 'filter table')
+        img = PDImages.calculate()
+        addButton(self, 'Evaluate function', self.parentapp.evalBar, img, 'calculate')
+        img = PDImages.fit()
+        addButton(self, 'Stats models', self.parentapp.statsViewer, img, 'model fitting')
+        img = PDImages.table_delete()
+        addButton(self, 'Clear', self.parentapp.clearTable, img, 'clear table')
+        # img = PDImages.prefs()
+        # addButton(self, 'Prefs', self.parentapp.showPrefs, img, 'table preferences')
+        return
+
+
 def get_file_size(file_path, suffix="B"):
     """ Get the size of a given file, as a human-readable string
         https://stackoverflow.com/questions/1094841/get-human-readable-version-of-file-size
@@ -110,7 +163,7 @@ def load_file(filepath, subitem=None, is_stdin=False):
             dataframes.append(pandas.read_csv(filepath, sep='\t'))
             dataframe_names.append('default')
         elif file_extension in ['.xlsx', '.xls', '.ods']:
-            # old xls, new xls, and openoffice ods formats
+            # old xls, new xlsx, and openoffice ods formats
             xlfile = pandas.ExcelFile(filepath)
             sheet_name = None
             if subitem:
@@ -190,14 +243,13 @@ def load_file(filepath, subitem=None, is_stdin=False):
                 if DEBUG_MODE:
                     print(f'Reading data from selected table: {table_name}')
                 dataframes.append(pandas.read_sql_query(f"SELECT * FROM {table_name};", db_conn))
+                dataframe_names.append(table_name)
                 description = f'[table: {table_name}]'
             db_conn.close()
         else:
             print(f'Unsupported file extension: {file_extension}')
             sys.exit(1)
         end_time = time.time()
-        # TODO when loading an xlsx sheet, or sqlite table, the subitem size is less than file size
-        #   in title, size is misleading
         print(f'Loaded {this_file_size} in {end_time - start_time} seconds')
         if is_stdin:
             description = f'{this_file_size} - (from stdin)'
@@ -205,7 +257,7 @@ def load_file(filepath, subitem=None, is_stdin=False):
             description = f'{this_file_size} - {filepath} {description}'
     else:
         dataframes.append(pandas.DataFrame())
-        dataframe_names.append('default')
+        dataframe_names.append('No Data')
         description = '(no data loaded)'
     return (dataframes, dataframe_names, description)
 
@@ -246,6 +298,9 @@ def show_table(data, data_names, title):
     window_root.mainloop()
 
 def get_input_file_str(arguments):
+    # figure out from arguments and stdin, what data to load
+    #   for stdin, write it to a temp file first
+    #   returns a tuple: (filepath, b_from_stdin)
     b_has_stdin = False
     input_file_path = None
     input_data = []
@@ -262,12 +317,12 @@ def get_input_file_str(arguments):
                 b_has_stdin = False
         if b_has_stdin:
             if DEBUG_MODE:
-                print('TableView: loaded data from stdin')
+                print('Loaded data from stdin')
             # write input_data to a tempfile, because pandastable is MUCH faster at reading it from the file
             temp_csv = tempfile.mkstemp(prefix='tableview_', suffix='.csv')[1]
             input_file_path = str(temp_csv)
             if DEBUG_MODE:
-                print('Writing data from stdin to tempfile: %s' % input_file_str)
+                print(f'Writing data from stdin to tempfile: {input_file_str}')
             w_start_time = time.time()
             with open(temp_csv, 'w', encoding='utf-8') as tcsv:
                 writer = csv.writer(tcsv)
@@ -275,6 +330,21 @@ def get_input_file_str(arguments):
             w_end_time = time.time()
             if DEBUG_MODE:
                 print(f'Write .csv took {w_end_time - w_start_time} seconds')
+        else:
+            # no stdin, prompt to select file
+            # if the user clicks Cancel, or closes the dialog, input_file_path = None, and will show a table with no data
+            print('no stdin or filename, showing filedialog')
+            input_file_path = tkinter.filedialog.askopenfilename(title='Select file', filetypes=(
+                ("CSV files", "*.csv"),
+                ("TSV files", "*.tsv"),
+                ("Excel files", "*.xls"),
+                ("Excel files", "*.xlsx"),
+                ("OpenOffice files", "*.ods"),
+                ("Sqlite3 databases", "*.db"),
+                ("Sqlite3 databases", "*.sqlite"),
+                ("Sqlite3 databases", "*.sqlite3"),
+                ))
+
     else:
         input_file_arg = arguments['file']
         # normalize to absolute path
@@ -284,24 +354,27 @@ def get_input_file_str(arguments):
             raise Exception('File not found!')
     return (input_file_path, b_has_stdin)
 
+
+# Execution starts here
+
 if __name__ == '__main__':
     # parse args
     parser = argparse.ArgumentParser(description=APP_DESCRIPTION)
     parser.add_argument('file', nargs='?', help='file-with-data.csv')
-    parser.add_argument('subitem', nargs='?', help='which sheet or table')
+    parser.add_argument('subitem', nargs='?', help='which sheet or table, by name or index')
     args = vars(parser.parse_args())
-    window_title = 'TableView'  # default, but we will overwrite this with filename
     try:
         # First - figure out if we are loading data from stdin, or from file passed as arg
         #   if needed, write stdin data to a tempfile first
         (input_file_str, from_stdin) = get_input_file_str(args)
         # Next - load the file into a dataframe, and generate a description
-        # TODO this tuple return is ugly, refactor this
+        #   we get back a list of dataframes, a list of corresponding names, and a string f'{size} - {filepath}
         (input_dataframes, input_dataframe_names, input_desc) = load_file(input_file_str, args['subitem'], from_stdin)
         # Finally - show a table populated with the dataframe
-        window_title = f'TableView - {input_desc}'
-        show_table(input_dataframes, input_dataframe_names, window_title)
+        new_window_title = f'{APP_NAME} - {input_desc}'
+        show_table(input_dataframes, input_dataframe_names, new_window_title)
     except Exception as ex:
-        print('something went wrong: %s', ex)
-        traceback.print_exc()
+        print('Error: %s' % ex)
+        if DEBUG_MODE:
+            traceback.print_exc()
         sys.exit()
