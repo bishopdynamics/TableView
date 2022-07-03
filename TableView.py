@@ -37,6 +37,37 @@ APP_NAME = 'TableView'
 APP_DESCRIPTION = f'{APP_NAME} - A simple utility for macOS to load csv data from stdin or a file and render a nice interactive tableview to explore it'
 
 
+class ScrollableTable(Table):
+    """ Custom table with scrolling and a custom toolbar """
+    xscrollincrement = 10  # distance in pixels on x axis to scroll per increment
+
+    def __init__(self, parent=None, model=None, dataframe=None, width=None, height=None, rows=20, cols=5, showtoolbar=False, showstatusbar=False, editable=True, enable_menus=True, **kwargs):
+        super().__init__(parent, model, dataframe, width, height, rows, cols, showtoolbar, showstatusbar, editable, enable_menus, **kwargs)
+        self.toolbar = CustomToolBar(parent, self)
+        self.toolbar.grid(row=0,column=3,rowspan=2,sticky='news')
+
+    def mouse_wheel(self, event):
+        # handle mousewheel events and scroll the table
+        #   TODO we have to do things different on windows: https://github.com/dmnfarrell/pandastable/blob/39bb317ec3abbeca7b013fc99fa40d0111f7b3df/pandastable/core.py#L219
+        if DEBUG_MODE:
+            print(f'scroll delta: {event.delta}, state: {event.state} x: {event.x}, y: {event.y}')
+        scroll_distance = (event.delta * -1)
+        if event.state == 0:
+            # vertical scroll
+            self.config(yscrollincrement=event.widget.rowheight)
+            self.rowheader.config(yscrollincrement=event.widget.rowheight)
+            self.yview_scroll(scroll_distance, "units")
+            self.rowheader.yview_scroll(scroll_distance, "units")
+            self.redrawVisible()
+        elif event.state == 1:
+            # horizontal scroll
+            self.config(xscrollincrement=self.xscrollincrement)
+            self.colheader.config(xscrollincrement=self.xscrollincrement)
+            self.xview_scroll(scroll_distance, "units")
+            self.colheader.xview_scroll(scroll_distance, "units")
+            self.redrawVisible()
+
+
 class TableViewApp(tkinter.Frame):
     """ guess load the given dataframe into a table and show it
         https://stackoverflow.com/questions/63531454/import-pandas-table-into-tkinter-project
@@ -44,63 +75,19 @@ class TableViewApp(tkinter.Frame):
     """
     def __init__(self, root, dataframes, dataframe_names):
         super().__init__(root)
-        # Added naive rate-limiting for scroll input is particularly necessary when using a trackpad,
-        #   which can send both horiz and vert scroll events much faster than a normal mouse scrollwheel
-        #   this deluge of events overwhelms the UI render loop, and makes it stutter/hang while trying to scroll
-        #   so here, after receiving one event we ignore events for a brief period
-        #   this has the downside of also making scrolling feel a little less responsive than should be possible, but because it prevents stutter and hang, it feels much more responsive real-world
-        #   and improvement might be to collect event.delta in an accumulator for each axis, and the next time we handle an event we can scroll the accumulated amount
-        self.scroll_threshold_h = 0.08  # handle horizontal scroll events only this often
-        self.scroll_threshold_v = 0.03  # handle vertical scroll events only this often
-        self.scroll_lockout = 0.0  # how much longer to lockout other axis
-        self.last_scrolled_h = time.time()
-        self.last_scrolled_v = time.time()
         self.tabs_notebook = tkinter.ttk.Notebook(self)
         for index, df in enumerate(dataframes):
             tabframe = tkinter.ttk.Frame(self.tabs_notebook)
             # dont use showtoolbar, we are adding our own
-            thistable = Table(tabframe, showstatusbar=SHOW_STATUSBAR, dataframe=df)
+            thistable = ScrollableTable(tabframe, showstatusbar=SHOW_STATUSBAR, dataframe=df)
             self.tabs_notebook.add(tabframe, text=dataframe_names[index])
-            thistable.bind_all("<MouseWheel>", self.on_mousewheel)
-            # add our custom toolbar
-            thistable.toolbar = CustomToolBar(tabframe, thistable)
-            thistable.toolbar.grid(row=0,column=3,rowspan=2,sticky='news')
             thistable.show()
         self.tabs_notebook.pack(expand=1, fill='both')
-
-    def on_mousewheel(self, event):
-        # handle mousewheel events and scroll the table
-        try:
-            right_now = time.time()
-            scroll_distance = (event.delta * -1)
-            if event.state == 1 and (right_now - self.last_scrolled_h) > self.scroll_threshold_h:
-                # horizontal scroll
-                # print(f'scrolling horizontal delta: {event.delta}, state: {event.state} x: {event.x}, y: {event.y}')
-                self.last_scrolled_h = time.time()
-                self.last_scrolled_v = time.time() + self.scroll_lockout
-                event.widget.config(xscrollincrement=50)
-                event.widget.colheader.config(xscrollincrement=50)
-                event.widget.xview_scroll(scroll_distance, "units")
-                event.widget.colheader.xview_scroll(scroll_distance, "units")
-                event.widget.redrawVisible()
-            if event.state == 0 and (right_now - self.last_scrolled_v) > self.scroll_threshold_v:
-                # vertical scroll
-                # print(f'scrolling vertical delta: {event.delta}, state: {event.state} x: {event.x}, y: {event.y}')
-                self.last_scrolled_v = time.time()
-                self.last_scrolled_h = time.time() + self.scroll_lockout
-                event.widget.config(yscrollincrement=event.widget.rowheight)
-                event.widget.rowheader.config(yscrollincrement=event.widget.rowheight)
-                event.widget.yview_scroll(scroll_distance, "units")
-                event.widget.rowheader.yview_scroll(scroll_distance, "units")
-                event.widget.redrawVisible()
-            # self.table.currentrow = self.table.currentrow + event.delta  # change selected row
-        except Exception:
-            pass  # ignore all errors
 
 
 class CustomToolBar(tkinter.Frame):
     """Uses the parent instance to provide the functions"""
-    # NOTE this is copied from pandastable.Table, and modified to remove some buttons
+    # NOTE this is just copied from pandastable.Table and modified to remove some buttons
     def __init__(self, parent=None, parentapp=None):
         tkinter.Frame.__init__(self, parent, width=600, height=40)
         self.parentframe = parent
