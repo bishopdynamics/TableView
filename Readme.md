@@ -1,5 +1,7 @@
 # TableView
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 A simple utility for macOS to load csv data from stdin or a file and render a nice interactive tableview to explore it.
 
 From stdin, it presumes csv data. 
@@ -14,12 +16,9 @@ supported filetypes:
 * `.ods` OpenOffice / LibreOffice format
 * `.sqlite3`, `.sqlite`, `.db` sqlite3 database
 
-For Excel files will more than one sheet, you will be prompted to pick a sheet, or you can provide a sheet index or name as argument
+If you open it without any arguments or data, a dialog will let you select a file
 
 I did not create much here, `pandastable.Table` does most of the work.
-
-
-[GPLv3 license](License.txt)
 
 ![screenshot](screenshot.png)
 
@@ -34,12 +33,12 @@ Drag `TableView.app` into your Applications folder.
 
 ## Usage
 
-Open the app, and it will prompt you to select a file ending in `.csv`
+Open the app, and it will prompt you to select a file of a supported filetype.
 
 There are three ways to use it from terminal:
 * pipe data to stdin: `cat sampledata.csv | /Applications/TableView.app/Contents/MacOS/TableView`
 * read data from a file: `/Applications/TableView.app/Contents/MacOS/TableView sampledata.csv`
-* use a file selection dialog: `/Applications/TableView.app/Contents/MacOS/TableView`
+* use the file selection dialog: `/Applications/TableView.app/Contents/MacOS/TableView`
 
 
 ## Symlink

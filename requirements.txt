@@ -4,4 +4,4 @@ pandastable  # fancy excel-like table UI for pandas dataframes
 openpyxl    # read excel formats
 xlwt    # write excel formats
 odfpy  # read openoffice formats
-statsmodels
+statsmodels  # statistical modeling

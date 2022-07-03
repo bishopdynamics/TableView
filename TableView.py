@@ -100,7 +100,7 @@ class TableViewApp(tkinter.Frame):
 
 class CustomToolBar(tkinter.Frame):
     """Uses the parent instance to provide the functions"""
-    # NOTE this is copied from pandastable.Table, and modified
+    # NOTE this is copied from pandastable.Table, and modified to remove some buttons
     def __init__(self, parent=None, parentapp=None):
         tkinter.Frame.__init__(self, parent, width=600, height=40)
         self.parentframe = parent
@@ -129,8 +129,6 @@ class CustomToolBar(tkinter.Frame):
         addButton(self, 'Stats models', self.parentapp.statsViewer, img, 'model fitting')
         img = PDImages.table_delete()
         addButton(self, 'Clear', self.parentapp.clearTable, img, 'clear table')
-        # img = PDImages.prefs()
-        # addButton(self, 'Prefs', self.parentapp.showPrefs, img, 'table preferences')
         return
 
 
@@ -332,7 +330,7 @@ def get_input_file_str(arguments):
                 print(f'Write .csv took {w_end_time - w_start_time} seconds')
         else:
             # no stdin, prompt to select file
-            # if the user clicks Cancel, or closes the dialog, input_file_path = None, and will show a table with no data
+            # if the user clicks Cancel, or closes the dialog, input_file_path = None, and will exit
             print('no stdin or filename, showing filedialog')
             input_file_path = tkinter.filedialog.askopenfilename(title='Select file', filetypes=(
                 ("CSV files", "*.csv"),
@@ -344,6 +342,8 @@ def get_input_file_str(arguments):
                 ("Sqlite3 databases", "*.sqlite"),
                 ("Sqlite3 databases", "*.sqlite3"),
                 ))
+            if input_file_path is None:
+                sys.exit()
 
     else:
         input_file_arg = arguments['file']
