@@ -31,6 +31,8 @@ DEBUG_MODE = False
 WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 600
 
+POP_OUT_CHILD = False
+
 SHOW_STATUSBAR = True
 
 APP_NAME = 'TableView'
@@ -40,11 +42,13 @@ APP_DESCRIPTION = f'{APP_NAME} - A simple utility for macOS to load csv data fro
 class ScrollableTable(Table):
     """ Custom table with scrolling and a custom toolbar """
     xscrollincrement = 10  # distance in pixels on x axis to scroll per increment
+    secondarysize = 400  # when opening a secondary table, make window this much taller
 
-    def __init__(self, parent=None, model=None, dataframe=None, width=None, height=None, rows=20, cols=5, showtoolbar=False, showstatusbar=False, editable=True, enable_menus=True, **kwargs):
+    def __init__(self, parent=None, model=None, dataframe=None, width=None, height=None, rows=20, cols=5, showtoolbar=False, showstatusbar=False, editable=True, enable_menus=True, window=None, **kwargs):
         super().__init__(parent, model, dataframe, width, height, rows, cols, showtoolbar, showstatusbar, editable, enable_menus, **kwargs)
         self.toolbar = CustomToolBar(parent, self)
         self.toolbar.grid(row=0,column=3,rowspan=2,sticky='news')
+        self.parent_window = window
 
     def mouse_wheel(self, event):
         # handle mousewheel events and scroll the table
@@ -67,6 +71,62 @@ class ScrollableTable(Table):
             self.colheader.xview_scroll(scroll_distance, "units")
             self.redrawVisible()
 
+    def createChildTable(self, df, title=None, index=False, out=False):
+        """Add the child table, using our custom toolbar"""
+
+        self.closeChildTable()
+        if out:
+            win = tkinter.Toplevel()
+            x,y,w,h = self.getGeometry(self.master)
+            win.geometry('+%s+%s' %(int(x+w/2),int(y+h/2)))
+            if title:
+                win.title(title)
+        else:
+            win = tkinter.Frame(self.parentframe)
+            win.grid(row=self.childrow,column=0,columnspan=2,sticky='news')
+        self.childframe = win # pylint: disable=attribute-defined-outside-init
+        newtable = self.__class__(win, dataframe=df, showtoolbar=0, showstatusbar=1)
+        newtable.parenttable = self # pylint: disable=attribute-defined-outside-init
+        newtable.parent_window = self.parent_window
+        newtable.adjustColumnWidths()
+        newtable.show()
+        toolbar = CustomChildToolBar(win, newtable)
+        toolbar.grid(row=0,column=3,rowspan=2,sticky='news')
+        self.child = newtable
+        if hasattr(self, 'pf'):
+            newtable.pf = self.pf # pylint: disable=attribute-defined-outside-init
+        if index:
+            newtable.showIndex()
+        return
+
+    def remove(self):
+        """Close child table frame"""
+        if DEBUG_MODE:
+            print('removing child table')
+        if hasattr(self, 'parenttable'):
+            self.parenttable.child.destroy()
+            self.parenttable.child = None
+            self.parenttable.plotted = 'main'
+        self.parentframe.destroy()
+        return
+
+    def load_secondary_table(self):
+        print('loading secondary table')
+        filepath = prompt_for_file()
+        if filepath:
+            (dataframes, df_names, _desc) = load_file(filepath)
+            selected_index = 0  # default to first
+            if len(df_names) > 1:
+                selected_subitem = prompt_for_option(self.parent_window, 'Choose', 'Choose one:', df_names)
+                print(f'selected item: {selected_subitem}')
+                for (index, value) in enumerate(df_names):
+                    if value == selected_subitem:
+                        selected_index = index
+                        break
+            if DEBUG_MODE:
+                print('creating child table...')
+            self.createChildTable(dataframes[selected_index], title=df_names[selected_index], out=POP_OUT_CHILD)
+
 
 class TableViewApp(tkinter.Frame):
     """ guess load the given dataframe into a table and show it
@@ -75,11 +135,12 @@ class TableViewApp(tkinter.Frame):
     """
     def __init__(self, root, dataframes, dataframe_names):
         super().__init__(root)
+        self.parent_window = root
         self.tabs_notebook = tkinter.ttk.Notebook(self)
         for index, df in enumerate(dataframes):
             tabframe = tkinter.ttk.Frame(self.tabs_notebook)
             # dont use showtoolbar, we are adding our own
-            thistable = ScrollableTable(tabframe, showstatusbar=SHOW_STATUSBAR, dataframe=df)
+            thistable = ScrollableTable(tabframe, showstatusbar=SHOW_STATUSBAR, dataframe=df, window=self.parent_window)
             self.tabs_notebook.add(tabframe, text=dataframe_names[index])
             thistable.show()
         self.tabs_notebook.pack(expand=1, fill='both')
@@ -92,6 +153,8 @@ class CustomToolBar(tkinter.Frame):
         tkinter.Frame.__init__(self, parent, width=600, height=40)
         self.parentframe = parent
         self.parentapp = parentapp
+        img = PDImages.open_proj()
+        addButton(self, 'Load Secondary', self.parentapp.load_secondary_table, img, 'load secondary table from file')
         img = PDImages.copy()
         addButton(self, 'Copy', self.parentapp.copyTable, img, 'copy table to clipboard')
         img = PDImages.paste()
@@ -107,7 +170,7 @@ class CustomToolBar(tkinter.Frame):
         img = PDImages.merge()
         addButton(self, 'Merge', self.parentapp.doCombine, img, 'merge, concat or join')
         img = PDImages.table_multiple()
-        addButton(self, 'Table from selection', self.parentapp.tableFromSelection, img, 'sub-table from selection')
+        addButton(self, 'Table from selection', self.parentapp.tableFromSelection, img, 'secondary table from selection')
         img = PDImages.filtering()
         addButton(self, 'Query', self.parentapp.queryBar, img, 'filter table')
         img = PDImages.calculate()
@@ -116,6 +179,27 @@ class CustomToolBar(tkinter.Frame):
         addButton(self, 'Stats models', self.parentapp.statsViewer, img, 'model fitting')
         img = PDImages.table_delete()
         addButton(self, 'Clear', self.parentapp.clearTable, img, 'clear table')
+        return
+
+
+class CustomChildToolBar(tkinter.Frame):
+    """Smaller toolbar for child table"""
+    def __init__(self, parent=None, parentapp=None):
+        tkinter.Frame.__init__(self, parent, width=600, height=40)
+        self.parentframe = parent
+        self.parentapp = parentapp
+        img = PDImages.plot()
+        addButton(self, 'Plot', self.parentapp.plotSelected, img, 'plot selected')
+        img = PDImages.transpose()
+        addButton(self, 'Transpose', self.parentapp.transpose, img, 'transpose')
+        img = PDImages.copy()
+        addButton(self, 'Copy', self.parentapp.copyTable, img, 'copy to clipboard')
+        img = PDImages.paste()
+        addButton(self, 'Paste', self.parentapp.pasteTable, img, 'paste table')
+        img = PDImages.table_delete()
+        addButton(self, 'Clear', self.parentapp.clearTable, img, 'clear table')
+        img = PDImages.cross()
+        addButton(self, 'Close', self.parentapp.remove, img, 'close')
         return
 
 
@@ -246,24 +330,46 @@ def load_file(filepath, subitem=None, is_stdin=False):
         description = '(no data loaded)'
     return (dataframes, dataframe_names, description)
 
-def prompt_for_option(title, prompt, options=None):
+def prompt_for_option(root, title, prompt, options=None):
     # ask the user to choose one of the given options, then return the selected option
+    if DEBUG_MODE:
+        print(f'prompting user to pick one of {len(options)} options')
     prompt_width = 300
     prompt_height = (25 * len(options)) + 50
-    root = tkinter.Tk()
-    root.title(title)
-    start_x = (root.winfo_screenwidth() / 2) - (prompt_width / 2) + random.randint(1, 10)
-    start_y = (root.winfo_screenheight() / 2) - (prompt_height / 2) + random.randint(1, 10)
-    root.geometry('%dx%d+%d+%d' % (prompt_width, prompt_height, start_x, start_y))
-    tkinter.Label(root, text=prompt).pack()
+    dialog = tkinter.Toplevel(root)
+    dialog.title(title)
+    start_x = (dialog.winfo_screenwidth() / 2) - (prompt_width / 2) + random.randint(1, 10)
+    start_y = (dialog.winfo_screenheight() / 2) - (prompt_height / 2) + random.randint(1, 10)
+    dialog.geometry('%dx%d+%d+%d' % (prompt_width, prompt_height, start_x, start_y))
+    tkinter.Label(dialog, text=prompt).pack()
     v = tkinter.IntVar()
     for i, option in enumerate(options):
-        tkinter.Radiobutton(root, text=option, variable=v, value=i).pack(anchor='w')
-    tkinter.Button(text='Submit', command=root.destroy).pack()
-    root.mainloop()
+        tkinter.Radiobutton(dialog, text=option, variable=v, value=i).pack(anchor='w')
+    tkinter.Button(dialog, text='Submit', command=dialog.destroy).pack()
+    dialog.grab_set()
+    dialog.wait_window()
+    print('prompt loop exited')
     if len(options) == 0:
         return  # if no options provided, dont try to return any
     return options[v.get()]
+
+def prompt_for_file():
+    # prompt to select a supported file
+    if DEBUG_MODE:
+        print('prompting for a file')
+    filepath = tkinter.filedialog.askopenfilename(title='Select a file', filetypes=(
+                ("CSV files", "*.csv"),
+                ("TSV files", "*.tsv"),
+                ("Excel files", "*.xls"),
+                ("Excel files", "*.xlsx"),
+                ("OpenOffice files", "*.ods"),
+                ("Sqlite3 databases", "*.db"),
+                ("Sqlite3 databases", "*.sqlite"),
+                ("Sqlite3 databases", "*.sqlite3"),
+                ))
+    if DEBUG_MODE:
+        print(f'user selected file: {filepath}')
+    return filepath
 
 def notify(message):
     # show a message
@@ -319,19 +425,9 @@ def get_input_file_str(arguments):
             # no stdin, prompt to select file
             # if the user clicks Cancel, or closes the dialog, input_file_path = None, and will exit
             print('no stdin or filename, showing filedialog')
-            input_file_path = tkinter.filedialog.askopenfilename(title='Select file', filetypes=(
-                ("CSV files", "*.csv"),
-                ("TSV files", "*.tsv"),
-                ("Excel files", "*.xls"),
-                ("Excel files", "*.xlsx"),
-                ("OpenOffice files", "*.ods"),
-                ("Sqlite3 databases", "*.db"),
-                ("Sqlite3 databases", "*.sqlite"),
-                ("Sqlite3 databases", "*.sqlite3"),
-                ))
+            input_file_path = prompt_for_file()
             if input_file_path is None:
                 sys.exit()
-
     else:
         input_file_arg = arguments['file']
         # normalize to absolute path
