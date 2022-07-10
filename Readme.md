@@ -1,6 +1,6 @@
 # TableView
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](License.txt)
 
 A simple utility for macOS to load csv data from stdin or a file and render a nice interactive tableview to explore it.
 
