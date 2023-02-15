@@ -74,3 +74,8 @@ You can also use `./test.sh sampledata.csv`, which just runs the python script w
 ## Linux and other Unix-like systems
 
 I only tested this on macOS, but this is all really basic python3 with tkinter and pandas, built into a macOS app using pyinstaller. It should be trivial to tweak it to work on any other system, and might already work out of the box.
+
+## Windows
+
+The build scripts are setup to work on Windows as well, but you need to use Git Bash to run them. 
+Use on Windows has not been extensively tested, but should work fine.

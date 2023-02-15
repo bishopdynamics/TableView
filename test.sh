@@ -11,6 +11,13 @@ function bail() {
 
 VENV_NAME="venv"
 
+if [ "$(uname -s)" == "Darwin" ] || [ "$(uname -s)" == "Linux" ]; then
+  PY_CMD='python3'
+else
+  # assume Windows
+  PY_CMD='python'
+fi
+
 # create venv if missing
 if [ ! -d "$VENV_NAME" ]; then
   ./setup-venv.sh || bail
@@ -18,10 +25,15 @@ fi
 
 echo "activating virtualenv..."
 # we need modules in the venv
-source "${VENV_NAME}/bin/activate" || bail
+if [ "$(uname -s)" == "Darwin" ] || [ "$(uname -s)" == "Linux" ]; then
+  source "${VENV_NAME}/bin/activate" || bail
+else
+  # assume Windows
+  source "${VENV_NAME}/Scripts/activate" || bail
+fi
 
 echo "running script..."
-python TableView.py "$@" || {
+$PY_CMD TableView.py "$@" || {
   deactivate
   bail
 }

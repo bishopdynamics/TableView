@@ -4,7 +4,13 @@
 # Created 2022 by James Bishop (james@bishopdynamics.com)
 
 VENV_NAME='venv'
-PY_CMD='python3'
+
+if [ "$(uname -s)" == "Darwin" ] || [ "$(uname -s)" == "Linux" ]; then
+  PY_CMD='python3'
+else
+  # assume Windows
+  PY_CMD='python'
+fi
 
 function bail() {
 	echo "An unexpected error occurred"
@@ -49,7 +55,12 @@ $PY_CMD -m virtualenv "$VENV_NAME" || {
 }
 
 # now activate the venv so we can install stuff inside it
-source "${VENV_NAME}/bin/activate" || bail
+if [ "$(uname -s)" == "Darwin" ] || [ "$(uname -s)" == "Linux" ]; then
+  source "${VENV_NAME}/bin/activate" || bail
+else
+  # assume Windows
+  source "${VENV_NAME}/Scripts/activate" || bail
+fi
 
 # always upgrade to latest pip first
 announce "upgrading pip"

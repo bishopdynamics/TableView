@@ -4,7 +4,14 @@
 # Created 2022 by James Bishop (james@bishopdynamics.com)
 
 APP_NAME="TableView"
-OUTPUT_FILE="dist/${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+if [ "$(uname -s)" == "Darwin" ]; then
+  OUTPUT_FILE="dist/${APP_NAME}.app/Contents/MacOS/${APP_NAME}"
+elif [ "$(uname -s)" == "Linux" ]; then
+  OUTPUT_FILE="dist/${APP_NAME}"
+else
+  # assume Windows
+  OUTPUT_FILE="dist/${APP_NAME}.exe"
+fi
 
 function bail() {
 	echo "An unexpected error occurred"
