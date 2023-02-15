@@ -14,10 +14,12 @@ import time
 import select
 import sys
 import tkinter
+import tkinter.filedialog
 import tempfile
 import random
 import os
 import sqlite3
+import signal
 
 from sys import stdin
 
@@ -55,7 +57,7 @@ class ScrollableTable(Table):
         #   TODO we have to do things different on windows: https://github.com/dmnfarrell/pandastable/blob/39bb317ec3abbeca7b013fc99fa40d0111f7b3df/pandastable/core.py#L219
         if DEBUG_MODE:
             print(f'scroll delta: {event.delta}, state: {event.state} x: {event.x}, y: {event.y}')
-        scroll_distance = (event.delta * -1)
+        scroll_distance = event.delta * -1
         if event.state == 0:
             # vertical scroll
             self.config(yscrollincrement=event.widget.rowheight)
@@ -114,7 +116,7 @@ class ScrollableTable(Table):
         print('loading secondary table')
         filepath = prompt_for_file()
         if filepath:
-            (dataframes, df_names, _desc) = load_file(filepath)
+            (dataframes, df_names) = load_file(self.parent_window, given_file=filepath)
             selected_index = 0  # default to first
             if len(df_names) > 1:
                 selected_subitem = prompt_for_option(self.parent_window, 'Choose', 'Choose one:', df_names)
@@ -127,23 +129,269 @@ class ScrollableTable(Table):
                 print('creating child table...')
             self.createChildTable(dataframes[selected_index], title=df_names[selected_index], out=POP_OUT_CHILD)
 
+    def queryBar(self, evt=None):
+        """Query/filtering dialog"""
+        if hasattr(self, 'qframe') and self.qframe is not None:
+            return
+        self.qframe = CustomQueryDialog(self)  #pylint: disable=attribute-defined-outside-init
+        self.qframe.grid(row=self.queryrow,column=0,columnspan=3,sticky='news')
+        return
+
 
 class TableViewApp(tkinter.Frame):
     """ guess load the given dataframe into a table and show it
         https://stackoverflow.com/questions/63531454/import-pandas-table-into-tkinter-project
         https://stackoverflow.com/questions/17355902/tkinter-binding-mousewheel-to-scrollbar
     """
-    def __init__(self, root, dataframes, dataframe_names):
+    def __init__(self, root, data):
         super().__init__(root)
         self.parent_window = root
         self.tabs_notebook = tkinter.ttk.Notebook(self)
-        for index, df in enumerate(dataframes):
+        for subitem_name, df in data.items():
             tabframe = tkinter.ttk.Frame(self.tabs_notebook)
             # dont use showtoolbar, we are adding our own
             thistable = ScrollableTable(tabframe, showstatusbar=SHOW_STATUSBAR, dataframe=df, window=self.parent_window)
-            self.tabs_notebook.add(tabframe, text=dataframe_names[index])
+            self.tabs_notebook.add(tabframe, text=subitem_name)
             thistable.show()
         self.tabs_notebook.pack(expand=1, fill='both')
+
+
+class CustomQueryDialog(tkinter.Frame):
+    """Use string query to filter. Will not work with spaces in column
+        names, so these would need to be converted first."""
+
+    def __init__(self, table):
+        parent = table.parentframe
+        tkinter.Frame.__init__(self, parent)
+        self.parent = parent
+        self.table = table
+        self.setup()
+        self.filters = []
+        return
+
+    def setup(self):
+
+        qf = self
+        sfont = "Helvetica 10 bold"
+        # tkinter.Label(qf, text='Enter String Query:', font=sfont).pack(side=tkinter.TOP,fill=tkinter.X)
+        self.queryvar = tkinter.StringVar()
+        e = tkinter.Entry(qf, textvariable=self.queryvar, font="Courier 12 bold")
+        e.bind('<Return>', self.query)
+        e.pack(fill=tkinter.BOTH,side=tkinter.TOP,expand=1,padx=2,pady=2)
+        self.fbar = tkinter.Frame(qf)
+        self.fbar.pack(side=tkinter.TOP,fill=tkinter.BOTH,expand=1,padx=2,pady=2)
+        f = tkinter.Frame(qf)
+        f.pack(side=tkinter.TOP, fill=tkinter.BOTH, padx=2, pady=2)
+        addButton(f, 'find', self.query, PDImages.filtering(), 'apply filters', side=tkinter.LEFT)
+        addButton(f, 'add manual filter', self.addFilter, PDImages.add(),
+                  'add manual filter', side=tkinter.LEFT)
+        addButton(f, 'close', self.close, PDImages.cross(), 'close', side=tkinter.LEFT)
+        self.applyqueryvar = tkinter.BooleanVar()
+        self.applyqueryvar.set(True)
+        c = tkinter.Checkbutton(f, text='show filtered only', variable=self.applyqueryvar,
+                      command=self.query)
+        c.pack(side=tkinter.LEFT,padx=2)
+        # addButton(f, 'color rows', self.colorResult, PDImages.color_swatch(), 'color filtered rows', side=tkinter.LEFT)
+
+        self.queryresultvar = tkinter.StringVar()
+        l = tkinter.Label(f,textvariable=self.queryresultvar, font=sfont)
+        l.pack(side=tkinter.RIGHT)
+        return
+
+    def close(self):
+        self.destroy()
+        self.table.qframe = None
+        self.table.showAll()
+
+    def query(self, _evt=None):
+        """Do query"""
+
+        table = self.table
+        s = self.queryvar.get()
+        if table.filtered:
+            table.model.df = table.dataframe
+        df = table.model.df
+        mask = None
+
+        #string query first
+        if s!='':
+            try:
+                mask = df.eval(s)
+            except Exception:
+                mask = df.eval(s, engine='python')
+        #add any filters from widgets
+        if len(self.filters)>0:
+            mask = self.applyFilter(df, mask)
+        if mask is None:
+            table.showAll()
+            self.queryresultvar.set('')
+            return
+        #apply the final mask
+        self.filtdf = filtdf = df[mask]  #pylint: disable=attribute-defined-outside-init
+        self.queryresultvar.set('%s rows found' %len(filtdf))
+
+        if self.applyqueryvar.get() == 1:
+            #replace current dataframe but keep a copy!
+            table.dataframe = table.model.df.copy()
+            table.delete('rowrect')
+            table.multiplerowlist = []
+            table.model.df = filtdf
+            table.filtered = True
+        else:
+            idx = filtdf.index
+            rows = table.multiplerowlist = table.getRowsFromIndex(idx)
+            if len(rows)>0:
+                table.currentrow = rows[0]
+
+        table.redraw()
+        return
+
+    def addFilter(self):
+        """Add a filter using widgets"""
+
+        df = self.table.model.df
+        fb = CustomFilterBar(self, self.fbar, list(df.columns))
+        fb.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=1, padx=2, pady=2)
+        self.filters.append(fb)
+        return
+
+    def applyFilter(self, df, mask=None):
+        """Apply the widget based filters, returns a boolean mask"""
+
+        if mask is None:
+            mask = df.index==df.index
+
+        for f in self.filters:
+            col, val, op, b = f.getFilter()
+            try:
+                val = float(val)
+            except Exception:
+                pass
+            #print (col, val, op, b)
+            if op == 'contains':
+                m = df[col].str.contains(str(val))
+            elif op == 'equals':
+                m = df[col]==val
+            elif op == 'not equals':
+                m = df[col]!=val
+            elif op == '>':
+                m = df[col]>val
+            elif op == '<':
+                m = df[col]<val
+            elif op == 'is empty':
+                m = df[col].isnull()
+            elif op == 'not empty':
+                m = ~df[col].isnull()
+            elif op == 'excludes':
+                m = -df[col].str.contains(val)
+            elif op == 'starts with':
+                m = df[col].str.startswith(val)
+            elif op == 'has length':
+                m = df[col].str.len()>val
+            elif op == 'is number':
+                m = df[col].astype('object').str.isnumeric()
+            elif op == 'is lowercase':
+                m = df[col].astype('object').str.islower()
+            elif op == 'is uppercase':
+                m = df[col].astype('object').str.isupper()
+            else:
+                continue
+            if b == 'AND':
+                mask = mask & m
+            elif b == 'OR':
+                mask = mask | m
+            elif b == 'NOT':
+                mask = mask ^ m
+        return mask
+
+    def colorResult(self):
+        """Color filtered rows in main table"""
+
+        table=self.table
+        if not hasattr(self.table,'dataframe') or not hasattr(self, 'filtdf'):
+            return
+        # TODO no such method getaColor
+        clr = self.table.getaColor('#dcf1fc')
+        if clr is None:
+            return
+        _df = table.model.df = table.dataframe
+        idx = self.filtdf.index
+        rows = table.multiplerowlist = table.getRowsFromIndex(idx)
+        table.setRowColors(rows, clr, cols='all')
+        return
+
+    def update(self):
+        df = self.table.model.df
+        cols = list(df.columns)
+        for f in self.filters:
+            f.update(cols)
+        return
+
+
+class CustomFilterBar(tkinter.Frame):
+    """Class providing filter widgets"""
+
+    operators = ['contains','excludes','equals','not equals','>','<','is empty','not empty',
+                 'starts with','ends with','has length','is number','is lowercase','is uppercase']
+    booleanops = ['AND','OR','NOT']
+
+    def __init__(self, parent, parentframe, cols):
+        tkinter.Frame.__init__(self, parentframe)
+        self.parent = parent
+        self.filtercol = tkinter.StringVar()
+        _initial = cols[0]
+        self.filtercolmenu = tkinter.ttk.Combobox(self,
+                textvariable = self.filtercol,
+                values = cols,
+                #initialitem = initial,
+                width = 14)
+        self.filtercolmenu.grid(row=0,column=1,sticky='news',padx=2,pady=2)
+        self.operator = tkinter.StringVar()
+        #self.operator.set('equals')
+        operatormenu = tkinter.ttk.Combobox(self,
+                textvariable = self.operator,
+                values = self.operators,
+                width = 10)
+        operatormenu.grid(row=0,column=2,sticky='news',padx=2,pady=2)
+        self.filtercolvalue=tkinter.StringVar()
+        valsbox = tkinter.Entry(self,textvariable=self.filtercolvalue,width=26)
+        valsbox.grid(row=0,column=3,sticky='news',padx=2,pady=2)
+        valsbox.bind_all("<Return>", self.parent.query)
+        self.booleanop = tkinter.StringVar()
+        self.booleanop.set('AND')
+        booleanopmenu = tkinter.ttk.Combobox(self,
+                textvariable = self.booleanop,
+                values = self.booleanops,
+                width = 6)
+        booleanopmenu.grid(row=0,column=0,sticky='news',padx=2,pady=2)
+        #disable the boolean operator if it's the first filter
+        # if self.index == 0:
+        #    booleanopmenu.component('menubutton').configure(state=DISABLED)
+        img = PDImages.cross()
+        cb = tkinter.Button(self,text='-', image=img, command=self.close)
+        cb.image = img
+        cb.grid(row=0,column=5,sticky='news',padx=2,pady=2)
+        return
+
+    def close(self):
+        """Destroy and remove from parent"""
+
+        self.parent.filters.remove(self)
+        self.destroy()
+        return
+
+    def getFilter(self):
+        """Get filter values for this instance"""
+
+        col = self.filtercol.get()
+        val = self.filtercolvalue.get()
+        op = self.operator.get()
+        booleanop = self.booleanop.get()
+        return col, val, op, booleanop
+
+    def update(self, cols):  #pylint: disable=arguments-differ
+        self.filtercolmenu['values'] = cols
+        return
 
 
 class CustomToolBar(tkinter.Frame):
@@ -188,14 +436,16 @@ class CustomChildToolBar(tkinter.Frame):
         tkinter.Frame.__init__(self, parent, width=600, height=40)
         self.parentframe = parent
         self.parentapp = parentapp
+        # img = PDImages.open_proj()
+        # addButton(self, 'Load Secondary', self.parentapp.load_secondary_table, img, 'load secondary table from file')
         img = PDImages.plot()
         addButton(self, 'Plot', self.parentapp.plotSelected, img, 'plot selected')
-        img = PDImages.transpose()
-        addButton(self, 'Transpose', self.parentapp.transpose, img, 'transpose')
+        # img = PDImages.transpose()
+        # addButton(self, 'Transpose', self.parentapp.transpose, img, 'transpose')
         img = PDImages.copy()
         addButton(self, 'Copy', self.parentapp.copyTable, img, 'copy to clipboard')
-        img = PDImages.paste()
-        addButton(self, 'Paste', self.parentapp.pasteTable, img, 'paste table')
+        # img = PDImages.paste()
+        # addButton(self, 'Paste', self.parentapp.pasteTable, img, 'paste table')
         img = PDImages.table_delete()
         addButton(self, 'Clear', self.parentapp.clearTable, img, 'clear table')
         img = PDImages.cross()
@@ -214,121 +464,129 @@ def get_file_size(file_path, suffix="B"):
         fsize_bytes /= 1024.0
     return f"{fsize_bytes:.1f}Yi{suffix}"
 
-def load_file(filepath, subitem=None, is_stdin=False):
-    dataframes = []
-    dataframe_names = []
-    if filepath:
-        start_time = time.time()
-        this_file_size = get_file_size(filepath)
-        description = ''
-        if DEBUG_MODE:
-            print(f'Reading data from file: {filepath}')
-        # self.table.importCSV(filepath)
-        file_extension = pathlib.Path(filepath).suffix
-        if file_extension == '.csv':
-            dataframes.append(pandas.read_csv(filepath))
-            dataframe_names.append('default')
-        elif file_extension == '.tsv':
-            dataframes.append(pandas.read_csv(filepath, sep='\t'))
-            dataframe_names.append('default')
-        elif file_extension in ['.xlsx', '.xls', '.ods']:
-            # old xls, new xlsx, and openoffice ods formats
-            xlfile = pandas.ExcelFile(filepath)
-            sheet_name = None
-            if subitem:
-                if DEBUG_MODE:
-                    print(f'Requested subitem: {subitem}')
-                if subitem in xlfile.sheet_names:
-                    sheet_name = subitem
-                else:
-                    # try using subitem as index into list
-                    try:
-                        sheet_name = xlfile.sheet_names[int(subitem)]
-                    except Exception:
-                        print(f'Failed to find sheet: {subitem}')
-                        sheet_name = None
-            if not sheet_name:
-                if len(xlfile.sheet_names) == 1:
-                    sheet_name = xlfile.sheet_names[0]
-                    if DEBUG_MODE:
-                        print(f'Only one sheet: {sheet_name}')
-            if not sheet_name:
+def read_file(filepath):
+    # read a file and return its data, as a dictionary of named Dataframes
+    #   checks file extension to assign a decoder
+    print(f'Reading data from file: {filepath}')
+    filepath_absolute = pathlib.Path(filepath).resolve()
+    file_data = None
+    if filepath_absolute.is_file():
+        if filepath_absolute.suffix in ['.csv', '.tsv', '.xlsx', '.xls', '.ods', '.db', '.sqlite', '.sqlite3']:
+            # lets try decoding this with pandas
+            # first try to read into dataframe
+            dataframes = []  # store dataframes
+            dataframe_names = []  # store dataframe names
+            if filepath_absolute.suffix == '.csv':
+                dataframes.append(pandas.read_csv(filepath_absolute))
+                dataframe_names.append('default')
+            elif filepath_absolute.suffix == '.tsv':
+                dataframes.append(pandas.read_csv(filepath_absolute, sep='\t'))
+                dataframe_names.append('default')
+            elif filepath_absolute.suffix in ['.xlsx', '.xls', '.ods']:
+                # old xls, new xlsx, and openoffice ods formats
+                xlfile = pandas.ExcelFile(filepath_absolute)
                 # load all sheets
                 if DEBUG_MODE:
                     print(f'Reading data from {len(xlfile.sheet_names)} sheets')
                 for this_sheet in xlfile.sheet_names:
-                    dataframes.append(pandas.read_excel(filepath, sheet_name=this_sheet))
+                    dataframes.append(pandas.read_excel(filepath_absolute, sheet_name=this_sheet))
                     dataframe_names.append(this_sheet)
-                description = '[all sheets]'
-            else:
+            elif filepath_absolute.suffix in ['.db', '.sqlite', '.sqlite3']:
+                # try to read sqlite db
                 if DEBUG_MODE:
-                    print(f'Reading data from selected sheet: {sheet_name}')
-                dataframes.append(pandas.read_excel(filepath, sheet_name=sheet_name))
-                dataframe_names.append(sheet_name)
-                description = f'[sheet: {sheet_name}]'
-        elif file_extension == '.json':
-            # json (an array of arrays, all well formatted)
-            dataframes.append(pandas.read_json(filepath))
-            dataframe_names.append('default')
-        elif file_extension in ['.db', '.sqlite', '.sqlite3']:
-            # try to read sqlite db
-            if DEBUG_MODE:
-                print(f'Treating as sqlite3 database: {file_extension}')
-            db_conn = sqlite3.connect(filepath)
-            cursor = db_conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-            tables_raw = cursor.fetchall()
-            tables_list = []
-            for entry in tables_raw:
-                tables_list.append(entry[0])
-            table_name = None
-            if subitem:
-                if DEBUG_MODE:
-                    print(f'Requested subitem: {subitem}')
-                if subitem in tables_list:
-                    table_name = subitem
-                else:
-                    # try using subitem as index into list
-                    try:
-                        table_name = tables_list[int(subitem)]
-                    except Exception:
-                        print(f'Failed to find table: {subitem}')
-                        table_name = None
-            if not table_name:
-                if len(tables_list) == 1:
-                    # if only one table, just pick that one
-                    table_name = tables_list[0]
-                    if DEBUG_MODE:
-                        print(f'Only one table: {table_name}')
-            if not table_name:
+                    print(f'Treating as sqlite3 database: {filepath_absolute.suffix}')
+                db_conn = sqlite3.connect(filepath_absolute)
+                cursor = db_conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                tables_raw = cursor.fetchall()
+                tables_list = []
+                for entry in tables_raw:
+                    tables_list.append(entry[0])
                 # load all tables
                 if DEBUG_MODE:
                     print(f'Reading data from {len(tables_list)} tables')
                 for this_table in tables_list:
                     dataframes.append(pandas.read_sql_query(f"SELECT * FROM {this_table};", db_conn))
                     dataframe_names.append(this_table)
-                description = '[all tables]'
-            else:
-                if DEBUG_MODE:
-                    print(f'Reading data from selected table: {table_name}')
-                dataframes.append(pandas.read_sql_query(f"SELECT * FROM {table_name};", db_conn))
-                dataframe_names.append(table_name)
-                description = f'[table: {table_name}]'
-            db_conn.close()
+                db_conn.close()
+            # now turn our lists into a single dictionary
+            file_data = {}
+            for (index, df_name) in enumerate(dataframe_names):
+                file_data[df_name] = dataframes[index]
         else:
-            print(f'Unsupported file extension: {file_extension}')
-            sys.exit(1)
-        end_time = time.time()
-        print(f'Loaded {this_file_size} in {end_time - start_time} seconds')
+            raise Exception(f'Unsupported file extension: {filepath_absolute.suffix}')
+    else:
+        raise FileNotFoundError
+    return file_data
+
+def load_file(wroot, arguments=None, given_file=None):
+    # load, from arguments or given_file, a file into a tableview
+    filepath = None
+    is_stdin = False
+    subitem = None
+    file_data = {}
+    start_time = time.time()
+    if given_file:
+        filepath = given_file
+    if not filepath:
+        # figure out where data is coming from, writing to a tempfile if needed
+        (filepath, is_stdin) = get_input_data(args)
+    if arguments:
+        subitem = arguments['subitem']
+    if filepath:
+        this_file_size = get_file_size(filepath)
+        description = ''
+        if DEBUG_MODE:
+            print(f'Reading data from file: {filepath}')
+        file_data = read_file(filepath)
+        file_extension = pathlib.Path(filepath).suffix
+        if file_extension in ['.xlsx', '.xls', '.ods', '.db', '.sqlite', '.sqlite3']:
+            # some formats have sub-items, like xlsx->sheet or sqlite->table
+            subitem_name = None
+            subitem_index = None
+            if subitem:
+                if DEBUG_MODE:
+                    print(f'Requested subitem: {subitem}')
+                if subitem in file_data:
+                    # subitem is the name
+                    subitem_name = subitem
+                    subitem_index = list(file_data.keys()).index(subitem_name)
+                else:
+                    # try using subitem as index
+                    print(f'No subitem named: {subitem}, trying as index')
+                    try:
+                        file_data_keys = list(file_data.keys())
+                        subitem_index = int(subitem)
+                        subitem_name = file_data_keys[subitem_index]
+                    except Exception:
+                        print(f'Failed to find subitem: {subitem}, will load all subitems')
+                        subitem_name = None
+                        subitem_index = None
+            if subitem_name is not None:
+                # only return the named sheet
+                print(f'filtering for subitem {subitem_index}: {subitem_name}')
+                new_data = {}
+                new_data[subitem_name] = file_data[subitem_name]
+                file_data = new_data
+                description = f'[subitem {subitem_index} : {subitem_name}]'
+            else:
+                description = '[all subitems]'
         if is_stdin:
             description = f'{this_file_size} - (from stdin)'
         else:
             description = f'{this_file_size} - {filepath} {description}'
+        end_time = time.time()
+        print(f'Loaded {this_file_size} in {end_time - start_time} seconds')
     else:
-        dataframes.append(pandas.DataFrame())
-        dataframe_names.append('No Data')
+        file_data = {}
+        file_data['default'] = pandas.DataFrame()
         description = '(no data loaded)'
-    return (dataframes, dataframe_names, description)
+    if given_file:
+        return file_data
+    else:
+        wroot.title(f'{APP_NAME} - {description}')
+        app = TableViewApp(wroot, file_data)
+        app.pack(fill=tkinter.BOTH, expand=1)
 
 def prompt_for_option(root, title, prompt, options=None):
     # ask the user to choose one of the given options, then return the selected option
@@ -357,16 +615,19 @@ def prompt_for_file():
     # prompt to select a supported file
     if DEBUG_MODE:
         print('prompting for a file')
-    filepath = tkinter.filedialog.askopenfilename(title='Select a file', filetypes=(
-                ("CSV files", "*.csv"),
-                ("TSV files", "*.tsv"),
-                ("Excel files", "*.xls"),
-                ("Excel files", "*.xlsx"),
-                ("OpenOffice files", "*.ods"),
-                ("Sqlite3 databases", "*.db"),
-                ("Sqlite3 databases", "*.sqlite"),
-                ("Sqlite3 databases", "*.sqlite3"),
-                ))
+    try:
+        filepath = tkinter.filedialog.askopenfilename(title='Select a file', filetypes=(
+                    ("CSV files", "*.csv"),
+                    ("TSV files", "*.tsv"),
+                    ("Excel files", "*.xls"),
+                    ("Excel files", "*.xlsx"),
+                    ("OpenOffice files", "*.ods"),
+                    ("Sqlite3 databases", "*.db"),
+                    ("Sqlite3 databases", "*.sqlite"),
+                    ("Sqlite3 databases", "*.sqlite3"),
+                    ))
+    except Exception as exa:
+        print(f'Error: {exa}')
     if DEBUG_MODE:
         print(f'user selected file: {filepath}')
     return filepath
@@ -375,20 +636,7 @@ def notify(message):
     # show a message
     prompt_for_option('Notice', message, [])
 
-def show_table(data, data_names, title):
-    """ show a window with table for the given dataframe
-    """
-    window_root = tkinter.Tk()
-    # put it in the center of the screen
-    startpoint_x = (window_root.winfo_screenwidth() / 2) - (WINDOW_WIDTH / 2) + random.randint(1, 10)
-    startpoint_y = (window_root.winfo_screenheight() / 2) - (WINDOW_HEIGHT / 2) + random.randint(1, 10)
-    window_root.geometry('%dx%d+%d+%d' % (WINDOW_WIDTH, WINDOW_HEIGHT, startpoint_x, startpoint_y))
-    window_root.title(title)
-    app = TableViewApp(window_root, data, data_names)
-    app.pack(fill=tkinter.BOTH, expand=1)
-    window_root.mainloop()
-
-def get_input_file_str(arguments):
+def get_input_data(arguments):
     # figure out from arguments and stdin, what data to load
     #   for stdin, write it to a temp file first
     #   returns a tuple: (filepath, b_from_stdin)
@@ -396,7 +644,10 @@ def get_input_file_str(arguments):
     input_file_path = None
     input_data = []
     if not arguments['file']:
-        b_has_stdin = select.select([sys.stdin, ], [], [], 0.0)[0]  # check if any data in stdin
+        try:
+            b_has_stdin = select.select([sys.stdin, ], [], [], 0.0)[0]  # check if any data in stdin
+        except Exception:
+            b_has_stdin = False
         if b_has_stdin:
             # we have data at stdin, lets see if it is empty
             csv_reader = csv.reader(stdin)
@@ -411,16 +662,16 @@ def get_input_file_str(arguments):
                 print('Loaded data from stdin')
             # write input_data to a tempfile, because pandastable is MUCH faster at reading it from the file
             temp_csv = tempfile.mkstemp(prefix='tableview_', suffix='.csv')[1]
-            input_file_path = str(temp_csv)
             if DEBUG_MODE:
-                print(f'Writing data from stdin to tempfile: {input_file_str}')
+                print(f'Writing data from stdin to tempfile: {temp_csv}')
             w_start_time = time.time()
             with open(temp_csv, 'w', encoding='utf-8') as tcsv:
                 writer = csv.writer(tcsv)
                 writer.writerows(input_data)
+            input_file_path = str(temp_csv)
             w_end_time = time.time()
             if DEBUG_MODE:
-                print(f'Write .csv took {w_end_time - w_start_time} seconds')
+                print(f'Wrote temp .csv in {w_end_time - w_start_time} seconds')
         else:
             # no stdin, prompt to select file
             # if the user clicks Cancel, or closes the dialog, input_file_path = None, and will exit
@@ -437,6 +688,11 @@ def get_input_file_str(arguments):
             raise Exception('File not found!')
     return (input_file_path, b_has_stdin)
 
+def signal_handler(signum, _frame):
+    # handle a signal like segfault
+    print(f'caught signal {signum}')
+    traceback.print_exc()
+    sys.exit()
 
 # Execution starts here
 
@@ -447,15 +703,14 @@ if __name__ == '__main__':
     parser.add_argument('subitem', nargs='?', help='which sheet or table, by name or index')
     args = vars(parser.parse_args())
     try:
-        # First - figure out if we are loading data from stdin, or from file passed as arg
-        #   if needed, write stdin data to a tempfile first
-        (input_file_str, from_stdin) = get_input_file_str(args)
-        # Next - load the file into a dataframe, and generate a description
-        #   we get back a list of dataframes, a list of corresponding names, and a string f'{size} - {filepath}
-        (input_dataframes, input_dataframe_names, input_desc) = load_file(input_file_str, args['subitem'], from_stdin)
-        # Finally - show a table populated with the dataframe
-        new_window_title = f'{APP_NAME} - {input_desc}'
-        show_table(input_dataframes, input_dataframe_names, new_window_title)
+        signal.signal(signal.SIGSEGV, signal_handler)
+        window_root = tkinter.Tk()
+        # put it in the center of the screen
+        startpoint_x = (window_root.winfo_screenwidth() / 2) - (WINDOW_WIDTH / 2) + random.randint(1, 10)
+        startpoint_y = (window_root.winfo_screenheight() / 2) - (WINDOW_HEIGHT / 2) + random.randint(1, 10)
+        window_root.geometry('%dx%d+%d+%d' % (WINDOW_WIDTH, WINDOW_HEIGHT, startpoint_x, startpoint_y))
+        load_file(window_root, args)
+        window_root.mainloop()
     except Exception as ex:
         print('Error: %s' % ex)
         if DEBUG_MODE:
