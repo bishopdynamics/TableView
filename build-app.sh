@@ -46,11 +46,19 @@ echo "$GIT_COMMIT" > commit_id
 announce "Building from commit: $GIT_COMMIT"
 
 # using the .spec file, build a macos app out of our project
-# TODO what is the line to generate the spec in the first place?
-pyinstaller ${APP_NAME}.spec || {
-  deactivate
-  bail
-}
+if [ "$(uname -s)" == "Darwin" ]; then
+  # do not use onefile for macos, since it builds an app
+  pyinstaller ${APP_NAME}.macos.spec || {
+    deactivate
+    bail
+  }
+else
+  # use onefile option for Linux and Windows
+  pyinstaller ${APP_NAME}.spec || {
+    deactivate
+    bail
+  }
+fi
 
 # done withbuild, deactivate the venv
 announce "Deactivating virtualenv"
@@ -60,12 +68,12 @@ announce "Cleaning temp workspace"
 rm -r 'build' || bail  # clean up temp files
 # rm -r 'dist/TableView' || bail  # clean up temp files
 
-# zip up the app for release
-ZIP_FILE_NAME="${APP_NAME}_${GIT_COMMIT}.zip"
-announce "Creating archive: ${ZIP_FILE_NAME}"
+
 
 if [ "$(uname -s)" == "Darwin" ]; then
   # on macos, we must properly zip the resulting app in order to distribute it
+  ZIP_FILE_NAME="${APP_NAME}_${GIT_COMMIT}.zip"
+  announce "Creating archive: ${ZIP_FILE_NAME}"
   pushd 'dist' || bail
   # this command is exactly the same as when you right-click and Compress in the UI
   #   https://superuser.com/questions/505034/compress-files-from-os-x-terminal
@@ -77,4 +85,11 @@ if [ "$(uname -s)" == "Darwin" ]; then
 fi
 
 
-announce "Build Success!"
+if [ "$(uname -s)" == "Darwin" ]; then
+  echo "Success, resulting app: \"dist/${APP_NAME}.app"
+elif [ "$(uname -s)" == "Linux" ]; then
+  echo "Success, resulting binary: \"dist/${APP_NAME}"
+else
+  # assume Windows
+  echo "Success, resulting executable: \"dist/${APP_NAME}.exe"
+fi
