@@ -477,10 +477,22 @@ def read_file(filepath):
             dataframes = []  # store dataframes
             dataframe_names = []  # store dataframe names
             if filepath_absolute.suffix == '.csv':
-                dataframes.append(pandas.read_csv(filepath_absolute))
+                attempt_data = None
+                try:
+                    attempt_data = pandas.read_csv(filepath_absolute, encoding='utf-8')
+                except UnicodeDecodeError:
+                    print('re-trying with latin/cp1252/ISO-8859-1 encoding')
+                    attempt_data = pandas.read_csv(filepath_absolute, encoding='latin')
+                dataframes.append(attempt_data)
                 dataframe_names.append('default')
             elif filepath_absolute.suffix == '.tsv':
-                dataframes.append(pandas.read_csv(filepath_absolute, sep='\t'))
+                attempt_data = None
+                try:
+                    attempt_data = pandas.read_csv(filepath_absolute, sep='\t', encoding='utf-8')
+                except UnicodeDecodeError:
+                    print('re-trying with latin/cp1252/ISO-8859-1 encoding')
+                    attempt_data = pandas.read_csv(filepath_absolute, sep='\t', encoding='latin')
+                dataframes.append(attempt_data)
                 dataframe_names.append('default')
             elif filepath_absolute.suffix in ['.xlsx', '.xls', '.ods']:
                 # old xls, new xlsx, and openoffice ods formats
